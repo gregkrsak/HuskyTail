@@ -4,7 +4,7 @@
 // An Arduino project for the holiday season!
 // Written by Greg M. Krsak (greg.krsak@gmail.com)
 //
-// Moves a linear actuator (electric servo) through ~1in (~2.5cm) of travel,
+// Moves a linear actuator (electric servo) through ~1.5in (~3.8cm) of travel,
 // in order to "wag" the tail of a standing Husky decoration, which my daughter
 // and I bought in the outdoor Christmas decorations section at Home Depot.
 //
@@ -45,10 +45,10 @@
 
 
 // Servo motion limits (changing these could lead to broken stuff)
-#define SERVO_TAIL_UP_STOP   90
+#define SERVO_TAIL_UP_STOP   100
 #define SERVO_TAIL_DOWN_STOP 70
 // Servo motion timebase (in milliseconds)
-#define TIMEBASE 125
+#define TIMEBASE 110
 // Servo PWM pin (feel free to change this to another PWM pin)
 #define SERVO_PIN 9
 
@@ -66,7 +66,7 @@ void setup()
   // Set timebase
   timer.every(TIMEBASE, base);
 
-  // FIXME: Delete this debug code
+  // TODO: Figure out why the sketch doesn't work if this line is removed
   Serial.begin(115200);
 }
 
@@ -100,7 +100,7 @@ void base()
   // Move the servo. The counter equals the position.
   linearActuator.write(counter);
 
-  // FIXME: Delete this debug code
+  // TODO: Figure out why the sketch doesn't work if this line is removed
   Serial.println(counter);
 }
 // End of HuskyTail.ino
