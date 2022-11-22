@@ -48,7 +48,7 @@
 #define SERVO_TAIL_UP_STOP   105
 #define SERVO_TAIL_DOWN_STOP 70
 // Servo motion timebase (in milliseconds)
-#define TIMEBASE 125
+#define TIMEBASE 115
 // Servo PWM pin (feel free to change this to another PWM pin)
 #define SERVO_PIN 9
 
