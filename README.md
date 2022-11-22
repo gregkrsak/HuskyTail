@@ -1,4 +1,5 @@
-# HuskyTail
+HuskyTail
+-----------
 Uses an Arduino and a servo to wag the tail of a Home Depot outdoor husky decoration.
 
 **WATCH [THIS VIDEO](https://youtube.com/shorts/xi_J9zB_G6o?feature=share) TO SEE IT IN ACTION!**
