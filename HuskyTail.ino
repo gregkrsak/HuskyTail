@@ -46,7 +46,7 @@
 
 // Servo motion limits (changing these could lead to broken stuff)
 #define SERVO_TAIL_UP_STOP   130
-#define SERVO_TAIL_DOWN_STOP 110
+#define SERVO_TAIL_DOWN_STOP 90
 // Servo motion timebase (in milliseconds)
 #define TIMEBASE 125
 // Servo PWM pin (feel free to change this to another PWM pin)
