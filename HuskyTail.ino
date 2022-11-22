@@ -45,7 +45,7 @@
 
 
 // Servo motion limits (changing these could lead to broken stuff)
-#define SERVO_TAIL_UP_STOP   90
+#define SERVO_TAIL_UP_STOP   105
 #define SERVO_TAIL_DOWN_STOP 70
 // Servo motion timebase (in milliseconds)
 #define TIMEBASE 125
