@@ -8,6 +8,9 @@
 // in order to "wag" the tail of a standing Husky decoration, which my daughter
 // and I bought in the outdoor Christmas decorations section at Home Depot.
 //
+// An optional "dog bark" sound is played, if an Adafruit Sound Board is
+// connected.
+//
 // This is free and unencumbered software released into the public domain.
 // 
 // Anyone is free to copy, modify, publish, use, compile, sell, or
@@ -41,16 +44,29 @@
 #include "arduino-timer.h"
 
 
-// Tail wag duration (in milliseconds)
-#define TIMEBASE 1500
+// Tail wag one-way travel duration (in milliseconds)
+#define TIMEBASE 500
+// How long of a wait until the husky animates (in seconds)
+#define ANIMATION_DELAY 20
+// Internal counter threshold
+#define ANIMATION_COUNTER_THRESHOLD (1000 / TIMEBASE) * ANIMATION_DELAY
 // H Bridge pins (feel free to change these)
 #define HBRIDGE_PIN_1 9
 #define HBRIDGE_PIN_2 10
+// Sound Board pins (feel free to change these)
+#define SOUND_PIN_TRIGGER 6
+#define SOUND_PIN_VOLUME  7
+// Timebase visual feedback pin
+#define UI_PIN_TIMEBASE 13
 
 
 // GLOBAL VARIABLES ////////////////////////////////////////////////
 Timer<1/*task*/> timer;
 bool goingUp = true;
+bool shouldAnimate = true;
+bool alreadyBarked = false;
+bool shouldOutputUI = false;
+byte animationCounter = 0;
 
 
 // RUN ONCE ////////////////////////////////////////////////////////
@@ -59,8 +75,14 @@ void setup()
   // Set H Bridge output pins
   pinMode(HBRIDGE_PIN_1, OUTPUT);
   pinMode(HBRIDGE_PIN_2, OUTPUT);
+  // Set Sound Board output pins
+  pinMode(SOUND_PIN_TRIGGER, INPUT);
+  digitalWrite(SOUND_PIN_TRIGGER, LOW);
+  pinMode(SOUND_PIN_VOLUME, INPUT);
+  digitalWrite(SOUND_PIN_VOLUME, LOW);
   // Set timebase
-  timer.every(TIMEBASE, switchDirection);
+  timer.every(TIMEBASE, base);
+  pinMode(UI_PIN_TIMEBASE, OUTPUT);
 }
 
 
@@ -68,6 +90,37 @@ void setup()
 void loop()
 {
   timer.tick();
+  if (shouldAnimate)
+  {
+    wag();
+    bark();
+  }
+}
+
+
+// RUN EVERY TIMEBASE //////////////////////////////////////////////
+void base()
+{
+  // Flip-flop the wag direction state
+  goingUp = !goingUp;
+  // Increase the animation counter
+  animationCounter++;
+  // Flip-flop the animation state, if appropriate
+  if (animationCounter > ANIMATION_COUNTER_THRESHOLD)
+  {
+    animationCounter = 0;
+    alreadyBarked = false;
+    shouldAnimate = !shouldAnimate;
+    shouldOutputUI = !shouldOutputUI;
+    // Flash the UI output LED
+    digitalWrite(UI_PIN_TIMEBASE, shouldOutputUI);
+  }
+}
+
+
+// HELPER FUNCTIONS ////////////////////////////////////////////////
+void wag()
+{
   if (goingUp)
   {
     digitalWrite(HBRIDGE_PIN_1, HIGH);
@@ -80,12 +133,19 @@ void loop()
   }
 }
 
-
-// RUN EVERY TIMEBASE //////////////////////////////////////////////
-void switchDirection()
+void bark()
 {
-  // Flip-flop the wag direction state
-  goingUp ? goingUp = false : goingUp = true;
-
+  if (!alreadyBarked)
+  {
+    pinMode(SOUND_PIN_TRIGGER, OUTPUT);
+    digitalWrite(SOUND_PIN_TRIGGER, LOW);
+    alreadyBarked = true;
+  }
+  else
+  {
+    pinMode(SOUND_PIN_TRIGGER, INPUT);
+    digitalWrite(SOUND_PIN_TRIGGER, LOW);
+  }
 }
+
 // End of HuskyTail.ino
