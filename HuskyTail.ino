@@ -47,9 +47,9 @@
 // Tail wag one-way travel duration (in milliseconds)
 #define TIMEBASE 500
 // How long of a wait until the husky animates (in seconds)
-#define ANIMATION_DELAY 20
+#define ANIMATION_DELAY 30
 // Internal counter threshold
-#define ANIMATION_COUNTER_THRESHOLD (1000 / TIMEBASE) * ANIMATION_DELAY
+#define ANIMATION_COUNTER_THRESHOLD ((1000 / TIMEBASE) * ANIMATION_DELAY)
 // H Bridge pins (feel free to change these)
 #define HBRIDGE_PIN_1 9
 #define HBRIDGE_PIN_2 10
@@ -57,16 +57,16 @@
 #define SOUND_PIN_TRIGGER 6
 #define SOUND_PIN_VOLUME  7
 // Timebase visual feedback pin
-#define UI_PIN_TIMEBASE 13
+#define UI_PIN_DEBUG 13
 
 
 // GLOBAL VARIABLES ////////////////////////////////////////////////
 Timer<1/*task*/> timer;
-bool goingUp = true;
-bool shouldAnimate = true;
+bool goingUp = false;
+bool shouldAnimate = false;
 bool alreadyBarked = false;
 bool shouldOutputUI = false;
-byte animationCounter = 0;
+long animationCounter = 0;
 
 
 // RUN ONCE ////////////////////////////////////////////////////////
@@ -82,7 +82,8 @@ void setup()
   digitalWrite(SOUND_PIN_VOLUME, LOW);
   // Set timebase
   timer.every(TIMEBASE, base);
-  pinMode(UI_PIN_TIMEBASE, OUTPUT);
+  // Set UI pin, which is useful for debugging
+  pinMode(UI_PIN_DEBUG, OUTPUT);
 }
 
 
@@ -101,20 +102,19 @@ void loop()
 // RUN EVERY TIMEBASE //////////////////////////////////////////////
 void base()
 {
-  // Flip-flop the wag direction state
-  goingUp = !goingUp;
-  // Increase the animation counter
-  animationCounter++;
   // Flip-flop the animation state, if appropriate
   if (animationCounter > ANIMATION_COUNTER_THRESHOLD)
   {
     animationCounter = 0;
     alreadyBarked = false;
     shouldAnimate = !shouldAnimate;
-    shouldOutputUI = !shouldOutputUI;
-    // Flash the UI output LED
-    digitalWrite(UI_PIN_TIMEBASE, shouldOutputUI);
   }
+  
+  shouldOutputUI = !shouldOutputUI;
+  // Flip-flop the wag direction state
+  goingUp = shouldOutputUI;
+  // Increase the animation counter
+  animationCounter++;
 }
 
 
@@ -131,6 +131,7 @@ void wag()
     digitalWrite(HBRIDGE_PIN_1, LOW);
     digitalWrite(HBRIDGE_PIN_2, HIGH);
   }
+  flashDebugLedBasedOn(goingUp);
 }
 
 void bark()
@@ -146,6 +147,11 @@ void bark()
     pinMode(SOUND_PIN_TRIGGER, INPUT);
     digitalWrite(SOUND_PIN_TRIGGER, LOW);
   }
+}
+
+void flashDebugLedBasedOn(bool flag)
+{
+  digitalWrite(UI_PIN_DEBUG, flag);
 }
 
 // End of HuskyTail.ino
