@@ -4,7 +4,7 @@
 // An Arduino project for the holiday season!
 // Written by Greg M. Krsak (greg.krsak@gmail.com)
 //
-// Moves a linear actuator (electric servo) through ~1.5in (~3.8cm) of travel,
+// Moves a linear actuator (motor with an H Bridge) through a range of travel,
 // in order to "wag" the tail of a standing Husky decoration, which my daughter
 // and I bought in the outdoor Christmas decorations section at Home Depot.
 //
@@ -39,35 +39,28 @@
 // Needed for the Timer class
 // Reference: https://github.com/contrem/arduino-timer
 #include "arduino-timer.h"
-// Needed for the Servo class
-// Reference: https://github.com/arduino-libraries/Servo
-#include <Servo.h>
 
 
-// Servo motion limits (changing these could lead to broken stuff)
-#define SERVO_TAIL_UP_STOP   100
-#define SERVO_TAIL_DOWN_STOP 70
-// Servo motion timebase (in milliseconds)
-#define TIMEBASE 110
-// Servo PWM pin (feel free to change this to another PWM pin)
-#define SERVO_PIN 9
+// Tail wag duration (in milliseconds)
+#define TIMEBASE 1500
+// H Bridge pins (feel free to change these)
+#define HBRIDGE_PIN_1 9
+#define HBRIDGE_PIN_2 10
 
 
 // GLOBAL VARIABLES ////////////////////////////////////////////////
 Timer<1/*task*/> timer;
-Servo linearActuator;
+bool goingUp = true;
 
 
 // RUN ONCE ////////////////////////////////////////////////////////
 void setup()
 {
-  // Set servo PWM output pin
-  linearActuator.attach(SERVO_PIN);
+  // Set H Bridge output pins
+  pinMode(HBRIDGE_PIN_1, OUTPUT);
+  pinMode(HBRIDGE_PIN_2, OUTPUT);
   // Set timebase
-  timer.every(TIMEBASE, base);
-
-  // TODO: Figure out why the sketch doesn't work if this line is removed
-  Serial.begin(115200);
+  timer.every(TIMEBASE, switchDirection);
 }
 
 
@@ -75,32 +68,24 @@ void setup()
 void loop()
 {
   timer.tick();
+  if (goingUp)
+  {
+    digitalWrite(HBRIDGE_PIN_1, HIGH);
+    digitalWrite(HBRIDGE_PIN_2, LOW);
+  }
+  else
+  {
+    digitalWrite(HBRIDGE_PIN_1, LOW);
+    digitalWrite(HBRIDGE_PIN_2, HIGH);
+  }
 }
 
 
 // RUN EVERY TIMEBASE //////////////////////////////////////////////
-void base()
+void switchDirection()
 {
-  static byte counter = SERVO_TAIL_DOWN_STOP;
-  static bool goingUp = true;
+  // Flip-flop the wag direction state
+  goingUp ? goingUp = false : goingUp = true;
 
-  // Increment or decrement the counter appropriately
-  goingUp ? counter++ : counter--;
-
-  // Set the "going up or down" boolean flag appropriately
-  if (counter > SERVO_TAIL_UP_STOP)
-  {
-    goingUp = false;
-  }
-  if (counter < SERVO_TAIL_DOWN_STOP)
-  {
-    goingUp = true;
-  }
-
-  // Move the servo. The counter equals the position.
-  linearActuator.write(counter);
-
-  // TODO: Figure out why the sketch doesn't work if this line is removed
-  Serial.println(counter);
 }
 // End of HuskyTail.ino
