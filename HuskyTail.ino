@@ -47,7 +47,7 @@
 // Tail wag one-way travel duration (in milliseconds)
 #define TIMEBASE 500
 // How long of a wait until the husky animates (in seconds)
-#define ANIMATION_DELAY 30
+#define ANIMATION_DELAY 10
 // Internal counter threshold
 #define ANIMATION_COUNTER_THRESHOLD ((1000 / TIMEBASE) * ANIMATION_DELAY)
 // H Bridge pins (feel free to change these)
@@ -95,6 +95,10 @@ void loop()
   {
     wag();
     bark();
+  }
+  else
+  {
+    remain_still();
   }
 }
 
@@ -147,6 +151,12 @@ void bark()
     pinMode(SOUND_PIN_TRIGGER, INPUT);
     digitalWrite(SOUND_PIN_TRIGGER, LOW);
   }
+}
+
+void remain_still()
+{
+  digitalWrite(HBRIDGE_PIN_1, LOW);
+  digitalWrite(HBRIDGE_PIN_2, LOW);
 }
 
 void flashDebugLedBasedOn(bool flag)
