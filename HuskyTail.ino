@@ -155,6 +155,10 @@ void wag(int howManyTimes)
       flashDebugLedBasedOn(goingUp);
     }
   }
+  else
+  {
+    remain_still(); // Dog does nothing after the final wag
+  }
 }
 
 void bark()
