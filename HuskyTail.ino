@@ -45,9 +45,9 @@
 
 
 // Tail wag one-way travel duration (in milliseconds)
-#define TIMEBASE 500
+#define TIMEBASE 750
 // How long of a wait until the husky animates (in seconds)
-#define ANIMATION_DELAY 10
+#define ANIMATION_DELAY 30
 // Internal counter threshold
 #define ANIMATION_COUNTER_THRESHOLD ((1000 / TIMEBASE) * ANIMATION_DELAY)
 // H Bridge pins (feel free to change these)
@@ -65,7 +65,8 @@ Timer<1/*task*/> timer;
 bool goingUp = false;
 bool shouldAnimate = false;
 bool alreadyBarked = false;
-bool shouldOutputUI = false;
+bool alreadyWagged = false;
+int wagCounter = 0;
 long animationCounter = 0;
 
 
@@ -93,12 +94,12 @@ void loop()
   timer.tick();
   if (shouldAnimate)
   {
-    wag();
-    bark();
+    wag(5); // Dog will wag its tail this many times per animation period
+    bark(); // Dog will play bark sound effect once per animation period
   }
   else
   {
-    remain_still();
+    remain_still(); // Dog does nothing when outside of animation period
   }
 }
 
@@ -110,32 +111,48 @@ void base()
   if (animationCounter > ANIMATION_COUNTER_THRESHOLD)
   {
     animationCounter = 0;
+    wagCounter = 0;
     alreadyBarked = false;
+    alreadyWagged = false;
     shouldAnimate = !shouldAnimate;
   }
   
-  shouldOutputUI = !shouldOutputUI;
-  // Flip-flop the wag direction state
-  goingUp = shouldOutputUI;
+  // Flip-flop the wag direction state and increase the wag counter
+  goingUp = !goingUp;
+  if(goingUp)
+  {
+    wagCounter++;
+  }
   // Increase the animation counter
   animationCounter++;
 }
 
 
 // HELPER FUNCTIONS ////////////////////////////////////////////////
-void wag()
+void wag(int howManyTimes)
 {
-  if (goingUp)
+  if (!alreadyWagged)
   {
-    digitalWrite(HBRIDGE_PIN_1, HIGH);
-    digitalWrite(HBRIDGE_PIN_2, LOW);
+    if (goingUp)
+    {
+      digitalWrite(HBRIDGE_PIN_1, HIGH);
+      digitalWrite(HBRIDGE_PIN_2, LOW);
+    }
+    else
+    {
+      digitalWrite(HBRIDGE_PIN_1, LOW);
+      digitalWrite(HBRIDGE_PIN_2, HIGH);
+    }  
+    if (wagCounter > howManyTimes)
+    {
+      alreadyWagged = true;
+      flashDebugLedBasedOn(false);
+    }
+    else
+    {
+      flashDebugLedBasedOn(goingUp);
+    }
   }
-  else
-  {
-    digitalWrite(HBRIDGE_PIN_1, LOW);
-    digitalWrite(HBRIDGE_PIN_2, HIGH);
-  }
-  flashDebugLedBasedOn(goingUp);
 }
 
 void bark()
