@@ -47,7 +47,9 @@
 // Tail wag one-way travel duration (in milliseconds)
 #define TIMEBASE 750
 // How long of a wait until the husky animates (in seconds)
-#define ANIMATION_DELAY 30
+#define ANIMATION_DELAY 45
+// How many times the dog wags its tail at the start of each animation period
+#define NUMBER_OF_WAGS  5
 // Internal counter threshold
 #define ANIMATION_COUNTER_THRESHOLD ((1000 / TIMEBASE) * ANIMATION_DELAY)
 // H Bridge pins (feel free to change these)
@@ -94,8 +96,8 @@ void loop()
   timer.tick();
   if (shouldAnimate)
   {
-    wag(5); // Dog will wag its tail this many times per animation period
-    bark(); // Dog will play bark sound effect once per animation period
+    wag(NUMBER_OF_WAGS);
+    bark(); // Dog will play bark sound effect only once per animation period
   }
   else
   {
