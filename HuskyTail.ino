@@ -163,17 +163,17 @@ void wag(int howManyTimes)
 
 void bark()
 {
-  if (!alreadyBarked)
-  {
+  //if (!alreadyBarked)
+  //{
     pinMode(SOUND_PIN_TRIGGER, OUTPUT);
     digitalWrite(SOUND_PIN_TRIGGER, LOW);
     alreadyBarked = true;
-  }
-  else
-  {
-    pinMode(SOUND_PIN_TRIGGER, INPUT);
-    digitalWrite(SOUND_PIN_TRIGGER, LOW);
-  }
+  //}
+  //else
+  //{
+  //  pinMode(SOUND_PIN_TRIGGER, INPUT);
+  //  digitalWrite(SOUND_PIN_TRIGGER, LOW);
+  //}
 }
 
 void remain_still()
