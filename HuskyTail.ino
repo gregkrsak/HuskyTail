@@ -1,190 +1,234 @@
-// HuskyTail.ino
-// https://github.com/gregkrsak/HuskyTail
-//
-// An Arduino project for the holiday season!
-// Written by Greg M. Krsak (greg.krsak@gmail.com)
-//
-// Moves a linear actuator (motor with an H Bridge) through a range of travel,
-// in order to "wag" the tail of a standing Husky decoration, which my daughter
-// and I bought in the outdoor Christmas decorations section at Home Depot.
-//
-// An optional "dog bark" sound is played, if an Adafruit Sound Board is
-// connected.
-//
-// This is free and unencumbered software released into the public domain.
-// 
-// Anyone is free to copy, modify, publish, use, compile, sell, or
-// distribute this software, either in source code form or as a compiled
-// binary, for any purpose, commercial or non-commercial, and by any
-// means.
-// 
-// In jurisdictions that recognize copyright laws, the author or authors
-// of this software dedicate any and all copyright interest in the
-// software to the public domain. We make this dedication for the benefit
-// of the public at large and to the detriment of our heirs and
-// successors. We intend this dedication to be an overt act of
-// relinquishment in perpetuity of all present and future rights to this
-// software under copyright law.
-// 
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-// IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-// OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-// OTHER DEALINGS IN THE SOFTWARE.
-// 
-// For more information, please refer to <http://unlicense.org/>
-//
-// Ho, Ho, Ho.
+// ArduinoProtoThread class
+#include "ArduinoProtoThread.hpp"
+// Required for the state machine enums
+#include "ArduinoProtoThreadStateMachine.hpp"
 
 
-// Needed for the Timer class
-// Reference: https://github.com/contrem/arduino-timer
-#include "arduino-timer.h"
-
-
-// Tail wag one-way travel duration (in milliseconds)
-#define TIMEBASE 1000
-// How long of a wait until the husky animates (in seconds)
-#define ANIMATION_DELAY 20
-// How many times the dog wags its tail at the start of each animation period
-#define NUMBER_OF_WAGS  5
-// Internal counter threshold
-#define ANIMATION_COUNTER_THRESHOLD ((1000 / TIMEBASE) * ANIMATION_DELAY)
-// H Bridge pins (feel free to change these)
-#define HBRIDGE_PIN_1 9
-#define HBRIDGE_PIN_2 10
-// Sound Board pins (feel free to change these)
-#define SOUND_PIN_TRIGGER 6
-#define SOUND_PIN_VOLUME  7
-// Timebase visual feedback pin
-#define UI_PIN_DEBUG 13
-
-
-// GLOBAL VARIABLES ////////////////////////////////////////////////
-Timer<1/*task*/> timer;
-bool goingUp = false;
-bool shouldAnimate = false;
-bool alreadyBarked = false;
-bool alreadyWagged = false;
-int wagCounter = 0;
-long animationCounter = 0;
-
-
-// RUN ONCE ////////////////////////////////////////////////////////
-void setup()
+// Wags the tail
+class TailWagger : public ArduinoProtoThreadEventHandler
 {
-  // Set H Bridge output pins
-  pinMode(HBRIDGE_PIN_1, OUTPUT);
-  pinMode(HBRIDGE_PIN_2, OUTPUT);
-  // Set Sound Board output pins
-  pinMode(SOUND_PIN_TRIGGER, INPUT);
-  digitalWrite(SOUND_PIN_TRIGGER, LOW);
-  pinMode(SOUND_PIN_VOLUME, INPUT);
-  digitalWrite(SOUND_PIN_VOLUME, LOW);
-  // Set timebase
-  timer.every(TIMEBASE, base);
-  // Set UI pin, which is useful for debugging
-  pinMode(UI_PIN_DEBUG, OUTPUT);
-}
+  public:
+    TailWagger(int pins[])
+    {
+      this->hbridgePin[0] = pins[0];
+      this->hbridgePin[1] = pins[1];
+    }
+    ~TailWagger() { }
+
+    void onStart()
+    {
+      pinMode(this->hbridgePin[0], OUTPUT);
+      pinMode(this->hbridgePin[1], OUTPUT);
+      this->remainStill();
+    }
+    void onRunning()
+    {
+      // Flip-flop the tail state
+      this->tailState ^= HIGH;
+      // Wag if commanded
+      if (this->shouldWag)
+      {
+        this->wag();
+      }
+      else
+      {
+        this->remainStill();
+      }
+    }
+    void onKill()
+    {
+      return;
+    }
+
+    void enable()
+    {
+      this->shouldWag = true;
+    }
+    void disable()
+    {
+      this->shouldWag = false;
+    }
+
+  protected:
+    bool tailState = LOW;
+    bool shouldWag = false;
+    int hbridgePin[1];
+
+    void wag()
+    {
+      digitalWrite(9, this->tailState);
+      digitalWrite(10, !this->tailState);
+    }
+    void remainStill()
+    {
+      digitalWrite(9, LOW);
+      digitalWrite(10, LOW);
+    }
+};
 
 
-// RUN INDEFINITELY ////////////////////////////////////////////////
-void loop()
+// Barks
+class Barker : public ArduinoProtoThreadEventHandler
 {
-  timer.tick();
-  if (shouldAnimate)
-  {
-    wag(NUMBER_OF_WAGS);
-    bark(); // Dog will play bark sound effect only once per animation period
-  }
-  else
-  {
-    remain_still(); // Dog does nothing when outside of animation period
-  }
-}
+  public:
+    Barker(int pin)
+    {
+      this->activationPin = pin;
+    }
+    ~Barker() { }
+
+    void onStart()
+    {
+      this->beQuiet();
+    }
+    void onRunning()
+    {
+      // Bark if commanded
+      if (this->shouldBeQuiet)
+      {
+        this->beQuiet();
+      }
+      else
+      {
+        this->bark();
+      }
+    }
+    void onKill()
+    {
+      return;
+    }
+
+    void enable()
+    {
+      this->shouldBeQuiet = false;
+    }
+    void disable()
+    {
+      this->shouldBeQuiet = true;
+    }
+
+  protected:
+    bool shouldBeQuiet = true;
+    int activationPin;
+
+    void bark()
+    {
+      pinMode(this->activationPin, OUTPUT);
+      digitalWrite(this->activationPin, LOW);
+    }
+    void beQuiet()
+    {
+      pinMode(this->activationPin, INPUT);
+      digitalWrite(this->activationPin, LOW);
+    }
+};
 
 
-// RUN EVERY TIMEBASE //////////////////////////////////////////////
-void base()
+// Gives positive commands to the dog
+class Trainer1 : public ArduinoProtoThreadEventHandler
 {
-  // Flip-flop the animation state, if appropriate
-  if (animationCounter > ANIMATION_COUNTER_THRESHOLD)
-  {
-    animationCounter = 0;
-    wagCounter = 0;
-    alreadyBarked = false;
-    alreadyWagged = false;
-    shouldAnimate = !shouldAnimate;
-  }
+  public:
+    Trainer1(TailWagger *dogTail, Barker *dogMouth)
+    {
+      this->dogTail = dogTail;
+      this->dogMouth = dogMouth;
+    }
+    ~Trainer1() { }
+
+    void onStart()
+    {
+      return;
+    }
+    void onRunning()
+    {
+      this->dogTail->enable();
+      this->dogMouth->enable();
+    }
+    void onKill()
+    {
+      return;
+    }
+
+  protected:
+    TailWagger *dogTail;
+    Barker *dogMouth;
+};
+
+
+// Gives negative commands to the dog
+class Trainer2 : public ArduinoProtoThreadEventHandler
+{
+  public:
+    Trainer2(TailWagger *dogTail, Barker *dogMouth)
+    {
+      this->dogTail = dogTail;
+      this->dogMouth = dogMouth;
+    }
+    ~Trainer2() { }
+
+    void onStart()
+    {
+      return;
+    }
+    void onRunning()
+    {
+      this->dogTail->disable();
+      this->dogMouth->disable();
+    }
+    void onKill()
+    {
+      return;
+    }
+
+  protected:
+    TailWagger *dogTail;
+    Barker *dogMouth;
+};
+
+
+TailWagger *dogsTail;
+Barker *dogsMouth;
+Trainer1 *yesTrainer;
+Trainer2 *noTrainer;
+
+ArduinoProtoThread *barkThread;
+ArduinoProtoThread *wagThread;
+ArduinoProtoThread *yesTrainerThread;
+ArduinoProtoThread *noTrainerThread;
+
+void setup() {
+  // Initialize barker
+  dogsMouth = new Barker(6);
+  barkThread = new ArduinoProtoThread();
+  barkThread->setEventHandlerTo(dogsMouth);
+  barkThread->setExecutionIntervalTo(450);  
+  barkThread->changeStateTo(Start);
   
-  // Flip-flop the wag direction state and increase the wag counter
-  goingUp = !goingUp;
-  if(goingUp)
-  {
-    wagCounter++;
-  }
-  // Increase the animation counter
-  animationCounter++;
+  // Initialize tail wagger
+  dogsTail = new TailWagger(new int[10, 9]);
+  wagThread = new ArduinoProtoThread();
+  wagThread->setEventHandlerTo(dogsTail);
+  wagThread->setExecutionIntervalTo(990);  
+  wagThread->changeStateTo(Start);
+
+  // Initialize "yes" trainer
+  yesTrainer = new Trainer1(dogsTail, dogsMouth);
+  yesTrainerThread = new ArduinoProtoThread();
+  yesTrainerThread->setEventHandlerTo(yesTrainer);
+  yesTrainerThread->setExecutionIntervalTo(10000);  
+  yesTrainerThread->changeStateTo(Start);
+
+  // Initialize "no" trainer
+  noTrainer = new Trainer2(dogsTail, dogsMouth);
+  noTrainerThread = new ArduinoProtoThread();
+  noTrainerThread->setEventHandlerTo(noTrainer);
+  noTrainerThread->setExecutionIntervalTo(14500);  
+  noTrainerThread->changeStateTo(Start);
 }
 
-
-// HELPER FUNCTIONS ////////////////////////////////////////////////
-void wag(int howManyTimes)
-{
-  if (!alreadyWagged)
-  {
-    if (goingUp)
-    {
-      digitalWrite(HBRIDGE_PIN_1, HIGH);
-      digitalWrite(HBRIDGE_PIN_2, LOW);
-    }
-    else
-    {
-      digitalWrite(HBRIDGE_PIN_1, LOW);
-      digitalWrite(HBRIDGE_PIN_2, HIGH);
-    }  
-    if (wagCounter > howManyTimes)
-    {
-      alreadyWagged = true;
-      flashDebugLedBasedOn(false);
-    }
-    else
-    {
-      flashDebugLedBasedOn(goingUp);
-    }
-  }
-  else
-  {
-    remain_still(); // Dog does nothing after the final wag
-  }
+void loop() {
+  barkThread->timeSlice();
+  wagThread->timeSlice();
+  yesTrainerThread->timeSlice();
+  noTrainerThread->timeSlice();
 }
-
-void bark()
-{
-  //if (!alreadyBarked)
-  //{
-    pinMode(SOUND_PIN_TRIGGER, OUTPUT);
-    digitalWrite(SOUND_PIN_TRIGGER, LOW);
-    alreadyBarked = true;
-  //}
-  //else
-  //{
-  //  pinMode(SOUND_PIN_TRIGGER, INPUT);
-  //  digitalWrite(SOUND_PIN_TRIGGER, LOW);
-  //}
-}
-
-void remain_still()
-{
-  digitalWrite(HBRIDGE_PIN_1, LOW);
-  digitalWrite(HBRIDGE_PIN_2, LOW);
-}
-
-void flashDebugLedBasedOn(bool flag)
-{
-  digitalWrite(UI_PIN_DEBUG, flag);
-}
-
-// End of HuskyTail.ino
