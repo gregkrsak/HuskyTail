@@ -47,7 +47,7 @@
 // Tail wag one-way travel duration (in milliseconds)
 #define TIMEBASE 1000
 // How long of a wait until the husky animates (in seconds)
-#define ANIMATION_DELAY 45
+#define ANIMATION_DELAY 20
 // How many times the dog wags its tail at the start of each animation period
 #define NUMBER_OF_WAGS  5
 // Internal counter threshold
