@@ -67,71 +67,13 @@ class TailWagger : public ArduinoProtoThreadEventHandler
 };
 
 
-// Barks
-class Barker : public ArduinoProtoThreadEventHandler
-{
-  public:
-    Barker(int pin)
-    {
-      this->activationPin = pin;
-    }
-    ~Barker() { }
-
-    void onStart()
-    {
-      this->beQuiet();
-    }
-    void onRunning()
-    {
-      // Bark if commanded
-      if (this->shouldBeQuiet)
-      {
-        this->beQuiet();
-      }
-      else
-      {
-        this->bark();
-      }
-    }
-    void onKill()
-    {
-      return;
-    }
-
-    void enable()
-    {
-      this->shouldBeQuiet = false;
-    }
-    void disable()
-    {
-      this->shouldBeQuiet = true;
-    }
-
-  protected:
-    bool shouldBeQuiet = true;
-    int activationPin;
-
-    void bark()
-    {
-      pinMode(this->activationPin, OUTPUT);
-      digitalWrite(this->activationPin, LOW);
-    }
-    void beQuiet()
-    {
-      pinMode(this->activationPin, INPUT);
-      digitalWrite(this->activationPin, LOW);
-    }
-};
-
-
 // Gives positive commands to the dog
 class Trainer1 : public ArduinoProtoThreadEventHandler
 {
   public:
-    Trainer1(TailWagger *dogTail, Barker *dogMouth)
+    Trainer1(TailWagger *dogTail)
     {
       this->dogTail = dogTail;
-      this->dogMouth = dogMouth;
     }
     ~Trainer1() { }
 
@@ -142,7 +84,6 @@ class Trainer1 : public ArduinoProtoThreadEventHandler
     void onRunning()
     {
       this->dogTail->enable();
-      this->dogMouth->enable();
     }
     void onKill()
     {
@@ -151,7 +92,6 @@ class Trainer1 : public ArduinoProtoThreadEventHandler
 
   protected:
     TailWagger *dogTail;
-    Barker *dogMouth;
 };
 
 
@@ -159,10 +99,9 @@ class Trainer1 : public ArduinoProtoThreadEventHandler
 class Trainer2 : public ArduinoProtoThreadEventHandler
 {
   public:
-    Trainer2(TailWagger *dogTail, Barker *dogMouth)
+    Trainer2(TailWagger *dogTail)
     {
       this->dogTail = dogTail;
-      this->dogMouth = dogMouth;
     }
     ~Trainer2() { }
 
@@ -173,7 +112,6 @@ class Trainer2 : public ArduinoProtoThreadEventHandler
     void onRunning()
     {
       this->dogTail->disable();
-      this->dogMouth->disable();
     }
     void onKill()
     {
@@ -182,28 +120,20 @@ class Trainer2 : public ArduinoProtoThreadEventHandler
 
   protected:
     TailWagger *dogTail;
-    Barker *dogMouth;
 };
 
 
 TailWagger *dogsTail;
-Barker *dogsMouth;
+
 Trainer1 *yesTrainer;
 Trainer2 *noTrainer;
 
-ArduinoProtoThread *barkThread;
 ArduinoProtoThread *wagThread;
 ArduinoProtoThread *yesTrainerThread;
 ArduinoProtoThread *noTrainerThread;
 
-void setup() {
-  // Initialize barker
-  dogsMouth = new Barker(6);
-  barkThread = new ArduinoProtoThread();
-  barkThread->setEventHandlerTo(dogsMouth);
-  barkThread->setExecutionIntervalTo(450);  
-  barkThread->changeStateTo(Start);
-  
+
+void setup() {  
   // Initialize tail wagger
   dogsTail = new TailWagger(new int[10, 9]);
   wagThread = new ArduinoProtoThread();
@@ -212,22 +142,22 @@ void setup() {
   wagThread->changeStateTo(Start);
 
   // Initialize "yes" trainer
-  yesTrainer = new Trainer1(dogsTail, dogsMouth);
+  yesTrainer = new Trainer1(dogsTail);
   yesTrainerThread = new ArduinoProtoThread();
   yesTrainerThread->setEventHandlerTo(yesTrainer);
   yesTrainerThread->setExecutionIntervalTo(10000);  
   yesTrainerThread->changeStateTo(Start);
 
   // Initialize "no" trainer
-  noTrainer = new Trainer2(dogsTail, dogsMouth);
+  noTrainer = new Trainer2(dogsTail);
   noTrainerThread = new ArduinoProtoThread();
   noTrainerThread->setEventHandlerTo(noTrainer);
   noTrainerThread->setExecutionIntervalTo(14500);  
   noTrainerThread->changeStateTo(Start);
 }
 
+
 void loop() {
-  barkThread->timeSlice();
   wagThread->timeSlice();
   yesTrainerThread->timeSlice();
   noTrainerThread->timeSlice();
