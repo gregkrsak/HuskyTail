@@ -22,7 +22,7 @@
 //
 
 
-#include "ArduinoProtoThread.hpp"
+#include "libraries/ArduinoProtoThread.hpp"
 
 // Arduino library
 #include <Arduino.h>

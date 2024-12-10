@@ -1,7 +1,7 @@
 // ArduinoProtoThread class
-#include "ArduinoProtoThread.hpp"
+#include "libraries/ArduinoProtoThread.hpp"
 // Required for the state machine enums
-#include "ArduinoProtoThreadStateMachine.hpp"
+#include "libraries/ArduinoProtoThreadStateMachine.hpp"
 
 
 // Wags the tail
