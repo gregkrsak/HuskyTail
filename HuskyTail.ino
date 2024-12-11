@@ -511,7 +511,7 @@ void setup()
   tailServoThread->setExecutionIntervalTo(100);  
   tailServoThread->changeStateTo(Start);
 
-  tailServo->moveToPosition(5);
+  tailServo->moveToPosition(100);
 }
 
 
