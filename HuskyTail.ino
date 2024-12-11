@@ -492,7 +492,7 @@ class LinearServo : public ArduinoProtoThreadEventHandler
     void incrementRetries()
     {
       this->movementRetries++;
-      Serial.print("LinearServo: Movement retries now at ");
+      Serial.print("LinearServo: [WARNING] Movement retries now at ");
       Serial.println(this->movementRetries);
     }
 
