@@ -352,7 +352,8 @@ void ArduinoProtoThread::timeSlice()
 // Pins used to control the linear servo
 struct LinearServoPins
 {
-  byte hbridgeOutput[1]; // Two digital output pins
+  byte hbridgeOutput1;   // Digital output pin 1
+  byte hbridgeOutput2;   // Digital output pin 2
   byte analogInput;      // One ADC input pin
 };
 
@@ -361,29 +362,65 @@ struct LinearServoPins
 class LinearServo : public ArduinoProtoThreadEventHandler
 {
   public:
-    LinearServo(const LinearServoPins pinSettings)
+    LinearServo(const LinearServoPins pinSettings, byte slop)
     {
-      this->pin.hbridgeOutput[0] = pinSettings.hbridgeOutput[0];
-      this->pin.hbridgeOutput[1] = pinSettings.hbridgeOutput[1];
+      Serial.println("Linear Servo: Initialized");
+      this->pin.hbridgeOutput1 = pinSettings.hbridgeOutput1;
+      this->pin.hbridgeOutput2 = pinSettings.hbridgeOutput2;
       this->pin.analogInput = pinSettings.analogInput;
+      this->slop = slop;
     }
     ~LinearServo() { }
 
     void onStart()
     {
-      pinMode(this->pin.hbridgeOutput[0], OUTPUT);
-      pinMode(this->pin.hbridgeOutput[1], OUTPUT);
+      Serial.print("Linear Servo: Waiting 45 seconds for Arduino Cloud to stabilize. ");
+      pinMode(this->pin.hbridgeOutput1, OUTPUT);
+      pinMode(this->pin.hbridgeOutput2, OUTPUT);
       this->initialPotentiometerValue = this->potentiometerValue();
-      this->commandedPosition = this->initialPotentiometerValue;
+      Serial.print("Pins: D");
+      Serial.print(this->pin.hbridgeOutput1);
+      Serial.print(",D");
+      Serial.print(this->pin.hbridgeOutput2);
+      Serial.print(",A");
+      Serial.print(this->pin.analogInput);
+      Serial.print(" ");
+      Serial.print("Position: ");
+      Serial.print(this->initialPotentiometerValue);
+      Serial.print(" Commanded: ");
+      Serial.print(this->commandedPosition);
+      Serial.print(" Slop: ");
+      Serial.println(this->slop);
     }
 
     void onRunning()
     {
       byte servoPosition = this->potentiometerValue();
+      
+      if (millis() < 45000) { return; } // See issue #19 - Arduino Cloud initialization makes timing unstable at sketch start
+      if (servoPosition > 244) { Serial.println("LinearServo error: Servo position high limit exceeded"); return; } // FIXME: This is a safety value, but this implementation is sloppy
+      if (servoPosition < 1) { Serial.println("LinearServo error: Servo position low limit exceeded"); return; } // FIXME: This is a safety value, but this implementation is sloppy
+      if (this->commandedPosition > 240) { Serial.println("LinearServo error: Commanded position too high"); return; } // FIXME: This is a safety value, but this implementation is sloppy
+      if (this->commandedPosition < 5) { Serial.println("LinearServo error: Commanded position too low"); return; } // FIXME: This is a safety value, but this implementation is sloppy
+      
       Serial.print(servoPosition);
-      if (servoPosition < this->commandedPosition) { this->actuatorExtend(); Serial.print("<"); }
-      if (servoPosition > this->commandedPosition) { this->actuatorRetract(); Serial.print(">"); }
-      if (servoPosition == this->commandedPosition) { this->actuatorHold(); Serial.print("="); }
+      //////////
+      if (servoPosition < this->commandedPosition - slop)
+      {
+        this->actuatorExtend();
+        Serial.print("<");
+      }
+      else if (servoPosition > this->commandedPosition + slop)
+      {
+        this->actuatorRetract();
+        Serial.print(">");
+      }
+      else
+      {
+        this->actuatorHold();
+        Serial.print("≈");
+      }
+      //////////
       Serial.println(this->commandedPosition);
     }
 
@@ -400,31 +437,34 @@ class LinearServo : public ArduinoProtoThreadEventHandler
 
     void moveToPosition(int servoPosition)
     {
+      Serial.print("Linear Servo: MOVE TO POSITION ");
+      Serial.println(servoPosition);
       this->commandedPosition = servoPosition;
     }
 
   protected:
     LinearServoPins pin;
     byte initialPotentiometerValue;
-    byte commandedPosition;
+    byte commandedPosition = 100;
+    byte slop;
 
 
     void actuatorExtend()
     {
-      digitalWrite(this->pin.hbridgeOutput[0], HIGH);
-      digitalWrite(this->pin.hbridgeOutput[1], LOW);
+      digitalWrite(this->pin.hbridgeOutput1, HIGH);
+      digitalWrite(this->pin.hbridgeOutput2, LOW);
     }
 
     void actuatorRetract()
     {
-      digitalWrite(this->pin.hbridgeOutput[0], LOW);
-      digitalWrite(this->pin.hbridgeOutput[1], HIGH);
+      digitalWrite(this->pin.hbridgeOutput1, LOW);
+      digitalWrite(this->pin.hbridgeOutput2, HIGH);
     }
 
     void actuatorHold()
     {
-      digitalWrite(this->pin.hbridgeOutput[0], LOW);
-      digitalWrite(this->pin.hbridgeOutput[1], LOW);
+      digitalWrite(this->pin.hbridgeOutput1, LOW);
+      digitalWrite(this->pin.hbridgeOutput2, LOW);
     }
 
     byte potentiometerValue()
@@ -461,14 +501,17 @@ void setup()
   
   // Initialize linear servo connected to the husky's tail
   LinearServoPins withPinConnections;
-  withPinConnections.hbridgeOutput[0] = 10;
-  withPinConnections.hbridgeOutput[1] = 9;
+  byte andSlop = 5;
+  withPinConnections.hbridgeOutput1 = 10;
+  withPinConnections.hbridgeOutput2 = 9;
   withPinConnections.analogInput = 0;
-  tailServo = new LinearServo(withPinConnections);
+  tailServo = new LinearServo(withPinConnections, andSlop);
   tailServoThread = new ArduinoProtoThread();
   tailServoThread->setEventHandlerTo(tailServo);
   tailServoThread->setExecutionIntervalTo(100);  
   tailServoThread->changeStateTo(Start);
+
+  tailServo->moveToPosition(5);
 }
 
 
