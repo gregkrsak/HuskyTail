@@ -348,133 +348,101 @@ void ArduinoProtoThread::timeSlice()
 /* CloudSwitch cloud_huskyTailShouldWag; */
 
 
-// Wags the tail
-class TailWagger : public ArduinoProtoThreadEventHandler
+// Pins used to control the linear servo
+struct LinearServoPins
+{
+  byte hbridgeOutput[1]; // Two digital output pins
+  byte analogInput;      // One ADC input pin
+};
+
+
+// Models the Actuonix L16 (L16-140-35-12-P) linear actuator as a servo, via both an H-Bridge and also feedback to the Arduino ADC
+class LinearServo : public ArduinoProtoThreadEventHandler
 {
   public:
-    TailWagger(int pins[])
+    LinearServo(const LinearServoPins pinSettings)
     {
-      this->hbridgePin[0] = pins[0];
-      this->hbridgePin[1] = pins[1];
+      this->pin.hbridgeOutput[0] = pinSettings.hbridgeOutput[0];
+      this->pin.hbridgeOutput[1] = pinSettings.hbridgeOutput[1];
+      this->pin.analogInput = pinSettings.analogInput;
     }
-    ~TailWagger() { }
+    ~LinearServo() { }
 
     void onStart()
     {
-      pinMode(this->hbridgePin[0], OUTPUT);
-      pinMode(this->hbridgePin[1], OUTPUT);
-      this->remainStill();
+      pinMode(this->pin.hbridgeOutput[0], OUTPUT);
+      pinMode(this->pin.hbridgeOutput[1], OUTPUT);
+      this->initialPotentiometerValue = this->potentiometerValue();
+      this->commandedPosition = this->initialPotentiometerValue;
     }
+
     void onRunning()
     {
-      // Flip-flop the tail state
-      this->tailState ^= HIGH;
-      // Wag if commanded
-      if (this->shouldWag)
+      if (this->servoIsMisaligned())
       {
-        this->wag();
-      }
-      else
-      {
-        this->remainStill();
+        if (this->potentiometerValue() < this->commandedPosition) { this->actuatorExtend(); }
+        if (this->potentiometerValue() > this->commandedPosition) { this->actuatorRetract(); }
+        if (this->potentiometerValue() == this->commandedPosition) { this->actuatorHold(); }
       }
     }
+
     void onKill()
     {
       return;
     }
 
-    void enable()
+    int startPosition()
     {
-      this->shouldWag = true;
+      int result = this->initialPotentiometerValue;
+      return result;
     }
-    void disable()
+
+    void moveToPosition(int servoPosition)
     {
-      this->shouldWag = false;
+      this->commandedPosition = servoPosition;
     }
 
   protected:
-    bool tailState = LOW;
-    bool shouldWag = false;
-    int hbridgePin[1];
+    LinearServoPins pin;
+    int initialPotentiometerValue;
+    int commandedPosition;
 
-    void wag()
+
+    void actuatorExtend()
     {
-      digitalWrite(9, this->tailState);
-      digitalWrite(10, !this->tailState);
+      digitalWrite(this->pin.hbridgeOutput[0], HIGH);
+      digitalWrite(this->pin.hbridgeOutput[1], LOW);
     }
-    void remainStill()
+
+    void actuatorRetract()
     {
-      digitalWrite(9, LOW);
-      digitalWrite(10, LOW);
+      digitalWrite(this->pin.hbridgeOutput[0], LOW);
+      digitalWrite(this->pin.hbridgeOutput[1], HIGH);
+    }
+
+    void actuatorHold()
+    {
+      digitalWrite(this->pin.hbridgeOutput[0], LOW);
+      digitalWrite(this->pin.hbridgeOutput[1], LOW);
+    }
+
+    bool servoIsMisaligned()
+    {
+      bool result = (this->potentiometerValue() != this->commandedPosition);
+      return result;
+    }
+
+    int potentiometerValue()
+    {
+      int result = analogRead(this->pin.analogInput);
+      return result;
     }
 };
 
 
-// Gives positive commands to the dog
-class Trainer1 : public ArduinoProtoThreadEventHandler
-{
-  public:
-    Trainer1(TailWagger *dogTail)
-    {
-      this->dogTail = dogTail;
-    }
-    ~Trainer1() { }
 
-    void onStart()
-    {
-      return;
-    }
-    void onRunning()
-    {
-      this->dogTail->enable();
-    }
-    void onKill()
-    {
-      return;
-    }
-
-  protected:
-    TailWagger *dogTail;
-};
-
-
-// Gives negative commands to the dog
-class Trainer2 : public ArduinoProtoThreadEventHandler
-{
-  public:
-    Trainer2(TailWagger *dogTail)
-    {
-      this->dogTail = dogTail;
-    }
-    ~Trainer2() { }
-
-    void onStart()
-    {
-      return;
-    }
-    void onRunning()
-    {
-      this->dogTail->disable();
-    }
-    void onKill()
-    {
-      return;
-    }
-
-  protected:
-    TailWagger *dogTail;
-};
-
-
-TailWagger *dogsTail;
-
-Trainer1 *yesTrainer;
-Trainer2 *noTrainer;
-
-ArduinoProtoThread *wagThread;
-ArduinoProtoThread *yesTrainerThread;
-ArduinoProtoThread *noTrainerThread;
+LinearServo *tailServo;
+ArduinoProtoThread *tailServoThread;
 
 
 void setup()
@@ -489,36 +457,23 @@ void setup()
   setDebugMessageLevel(2);
   ArduinoCloud.printDebugInfo();
   
-  // Initialize tail wagger
-  dogsTail = new TailWagger(new int[10, 9]);
-  wagThread = new ArduinoProtoThread();
-  wagThread->setEventHandlerTo(dogsTail);
-  wagThread->setExecutionIntervalTo(990);  
-  wagThread->changeStateTo(Start);
-
-  // Initialize "yes" trainer
-  yesTrainer = new Trainer1(dogsTail);
-  yesTrainerThread = new ArduinoProtoThread();
-  yesTrainerThread->setEventHandlerTo(yesTrainer);
-  yesTrainerThread->setExecutionIntervalTo(10000);  
-  yesTrainerThread->changeStateTo(Start);
-
-  // Initialize "no" trainer
-  noTrainer = new Trainer2(dogsTail);
-  noTrainerThread = new ArduinoProtoThread();
-  noTrainerThread->setEventHandlerTo(noTrainer);
-  noTrainerThread->setExecutionIntervalTo(14500);  
-  noTrainerThread->changeStateTo(Start);
+  // Initialize linear servo connected to the husky's tail
+  LinearServoPins withPinConnections;
+  withPinConnections.hbridgeOutput[0] = 10;
+  withPinConnections.hbridgeOutput[1] = 9;
+  withPinConnections.analogInput = 0;
+  tailServo = new LinearServo(withPinConnections);
+  tailServoThread = new ArduinoProtoThread();
+  tailServoThread->setEventHandlerTo(tailServo);
+  tailServoThread->setExecutionIntervalTo(100);  
+  tailServoThread->changeStateTo(Start);
 }
 
 
 void loop()
 {
   ArduinoCloud.update();
-  
-  wagThread->timeSlice();
-  yesTrainerThread->timeSlice();
-  noTrainerThread->timeSlice();
+  tailServoThread->timeSlice();
 }
 
 
