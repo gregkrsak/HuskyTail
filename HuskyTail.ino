@@ -364,7 +364,6 @@ class LinearServo : public ArduinoProtoThreadEventHandler
   public:
     LinearServo(const LinearServoPins pinSettings, byte slop)
     {
-      Serial.println("Linear Servo: Initialized");
       this->pin.hbridgeOutput1 = pinSettings.hbridgeOutput1;
       this->pin.hbridgeOutput2 = pinSettings.hbridgeOutput2;
       this->pin.analogInput = pinSettings.analogInput;
@@ -374,54 +373,72 @@ class LinearServo : public ArduinoProtoThreadEventHandler
 
     void onStart()
     {
-      Serial.print("Linear Servo: Waiting 45 seconds for Arduino Cloud to stabilize. ");
       pinMode(this->pin.hbridgeOutput1, OUTPUT);
       pinMode(this->pin.hbridgeOutput2, OUTPUT);
       this->initialPotentiometerValue = this->potentiometerValue();
-      Serial.print("Pins: D");
-      Serial.print(this->pin.hbridgeOutput1);
-      Serial.print(",D");
-      Serial.print(this->pin.hbridgeOutput2);
-      Serial.print(",A");
-      Serial.print(this->pin.analogInput);
-      Serial.print(" ");
-      Serial.print("Position: ");
-      Serial.print(this->initialPotentiometerValue);
-      Serial.print(" Commanded: ");
-      Serial.print(this->commandedPosition);
-      Serial.print(" Slop: ");
-      Serial.println(this->slop);
+      Serial.print("LinearServo: Initialized at position ");
+      Serial.println(this->startPosition());
     }
 
     void onRunning()
     {
       byte servoPosition = this->potentiometerValue();
-      
-      if (millis() < 45000) { return; } // See issue #19 - Arduino Cloud initialization makes timing unstable at sketch start
-      if (servoPosition > 244) { Serial.println("LinearServo error: Servo position high limit exceeded"); return; } // FIXME: This is a safety value, but this implementation is sloppy
-      if (servoPosition < 1) { Serial.println("LinearServo error: Servo position low limit exceeded"); return; } // FIXME: This is a safety value, but this implementation is sloppy
-      if (this->commandedPosition > 240) { Serial.println("LinearServo error: Commanded position too high"); return; } // FIXME: This is a safety value, but this implementation is sloppy
-      if (this->commandedPosition < 5) { Serial.println("LinearServo error: Commanded position too low"); return; } // FIXME: This is a safety value, but this implementation is sloppy
-      
-      Serial.print(servoPosition);
-      //////////
-      if (servoPosition < this->commandedPosition - slop)
+      unsigned long msSinceStart = millis();
+      static byte previousServoPosition;
+      ///// Hardware safety logic ///////
+      if (msSinceStart > 40000 && msSinceStart < 45000) { Serial.println("LinearServo: PREPARE FOR MOVEMENT"); } // See issue #19 - Arduino Cloud initialization makes timing unstable at sketch start
+      if (msSinceStart < 45000) { this->resetRetries(); return; } // See issue #19 - Arduino Cloud initialization makes timing unstable at sketch start
+      if (servoPosition > 244)
       {
-        this->actuatorExtend();
-        Serial.print("<");
+        Serial.println("LinearServo: [ERROR] Shutdown due to position high limit exceeded");
+        this->actuatorHold();
+        return;
       }
-      else if (servoPosition > this->commandedPosition + slop)
+      if (servoPosition < 2)
       {
+        Serial.println("LinearServo: [ERROR] Shutdown due to position low limit exceeded");
+        this->actuatorHold();
+        return;
+      }
+      if (this->movementRetries > 1)
+      {
+        Serial.println("LinearServo: [ERROR] Shutdown due to actuator not responding");
+        this->actuatorHold();
+        return;
+      }
+      if (this->commandedPosition > 240)
+      {
+        Serial.println("LinearServo: [WARNING] Commanded position too high");
+      }
+      if (this->commandedPosition < 5)
+      {
+        Serial.println("LinearServo: [WARNING] Commanded position too low");
+      }
+      ///// Servo positioning logic /////
+      if (servoPosition < this->commandedPosition - this->slop)
+      {
+        if (servoPosition == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
+        Serial.println("LinearServo: Extending...");
+        this->actuatorExtend();
+      }
+      else if (servoPosition > this->commandedPosition + this->slop)
+      {
+        if (servoPosition == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
+        Serial.println("LinearServo: Retracting...");
         this->actuatorRetract();
-        Serial.print(">");
       }
       else
       {
+        this->resetRetries();
+        Serial.print("LinearServo: Holding at ");
+        Serial.print(servoPosition);
+        Serial.print(" (Commanded ");
+        Serial.print(this->commandedPosition);
+        Serial.println(")");
         this->actuatorHold();
-        Serial.print("≈");
       }
-      //////////
-      Serial.println(this->commandedPosition);
+      ///////////////////////////////////
+      previousServoPosition = servoPosition;
     }
 
     void onKill()
@@ -437,9 +454,14 @@ class LinearServo : public ArduinoProtoThreadEventHandler
 
     void moveToPosition(int servoPosition)
     {
-      Serial.print("Linear Servo: MOVE TO POSITION ");
+      Serial.print("LinearServo: MOVE TO POSITION ");
       Serial.println(servoPosition);
       this->commandedPosition = servoPosition;
+    }
+
+    void moveToCenter()
+    {
+      this->moveToPosition(123);
     }
 
   protected:
@@ -447,7 +469,7 @@ class LinearServo : public ArduinoProtoThreadEventHandler
     byte initialPotentiometerValue;
     byte commandedPosition = 100;
     byte slop;
-
+    byte movementRetries = 0;
 
     void actuatorExtend()
     {
@@ -467,6 +489,18 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       digitalWrite(this->pin.hbridgeOutput2, LOW);
     }
 
+    void incrementRetries()
+    {
+      this->movementRetries++;
+      Serial.print("LinearServo: Movement retries now at ");
+      Serial.println(this->movementRetries);
+    }
+
+    void resetRetries()
+    {
+      this->movementRetries = 0;
+    }
+
     byte potentiometerValue()
     {
       byte result;
@@ -480,7 +514,6 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       return result;
     }
 };
-
 
 
 LinearServo *tailServo;
@@ -511,7 +544,7 @@ void setup()
   tailServoThread->setExecutionIntervalTo(100);  
   tailServoThread->changeStateTo(Start);
 
-  tailServo->moveToPosition(100);
+  tailServo->moveToCenter();
 }
 
 
@@ -525,7 +558,8 @@ void loop()
 // This code is executed every time a new value is received from Arduino Cloud.
 void onCloudHuskyTailShouldWagChange()
 {
-  // do nothing
+  Serial.print("Alexa: Arduino Cloud Variable cloud_huskyTailShouldWag changed to ");
+  Serial.println(cloud_huskyTailShouldWag);
 }
 
 /**********************************************************************************************************************/
