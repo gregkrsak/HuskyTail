@@ -381,16 +381,9 @@ class LinearServo : public ArduinoProtoThreadEventHandler
     {
       byte servoPosition = this->potentiometerValue();
       Serial.print(servoPosition);
-      if (this->servoIsMisaligned())
-      {
-        if (servoPosition < this->commandedPosition) { this->actuatorExtend(); Serial.print("<"); }
-        if (servoPosition > this->commandedPosition) { this->actuatorRetract(); Serial.print(">"); }
-      }
-      else
-      {
-        this->actuatorHold();
-        Serial.print("=");
-      }
+      if (servoPosition < this->commandedPosition) { this->actuatorExtend(); Serial.print("<"); }
+      if (servoPosition > this->commandedPosition) { this->actuatorRetract(); Serial.print(">"); }
+      if (servoPosition == this->commandedPosition) { this->actuatorHold(); Serial.print("="); }
       Serial.println(this->commandedPosition);
     }
 
@@ -432,12 +425,6 @@ class LinearServo : public ArduinoProtoThreadEventHandler
     {
       digitalWrite(this->pin.hbridgeOutput[0], LOW);
       digitalWrite(this->pin.hbridgeOutput[1], LOW);
-    }
-
-    bool servoIsMisaligned()
-    {
-      bool result = (this->potentiometerValue() != this->commandedPosition);
-      return result;
     }
 
     byte potentiometerValue()
