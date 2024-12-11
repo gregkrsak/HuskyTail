@@ -344,6 +344,7 @@ void ArduinoProtoThread::timeSlice()
 // Required for Arduino Cloud Things
 #include "thingProperties.h"
 
+
 // Arduino Cloud Variables (do not uncomment any of these lines):
 /* CloudSwitch cloud_huskyTailShouldWag; */
 
@@ -378,12 +379,19 @@ class LinearServo : public ArduinoProtoThreadEventHandler
 
     void onRunning()
     {
+      byte servoPosition = this->potentiometerValue();
+      Serial.print(servoPosition);
       if (this->servoIsMisaligned())
       {
-        if (this->potentiometerValue() < this->commandedPosition) { this->actuatorExtend(); }
-        if (this->potentiometerValue() > this->commandedPosition) { this->actuatorRetract(); }
-        if (this->potentiometerValue() == this->commandedPosition) { this->actuatorHold(); }
+        if (servoPosition < this->commandedPosition) { this->actuatorExtend(); Serial.print("<"); }
+        if (servoPosition > this->commandedPosition) { this->actuatorRetract(); Serial.print(">"); }
       }
+      else
+      {
+        this->actuatorHold();
+        Serial.print("=");
+      }
+      Serial.println(this->commandedPosition);
     }
 
     void onKill()
@@ -391,9 +399,9 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       return;
     }
 
-    int startPosition()
+    byte startPosition()
     {
-      int result = this->initialPotentiometerValue;
+      byte result = this->initialPotentiometerValue;
       return result;
     }
 
@@ -404,8 +412,8 @@ class LinearServo : public ArduinoProtoThreadEventHandler
 
   protected:
     LinearServoPins pin;
-    int initialPotentiometerValue;
-    int commandedPosition;
+    byte initialPotentiometerValue;
+    byte commandedPosition;
 
 
     void actuatorExtend()
@@ -432,9 +440,16 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       return result;
     }
 
-    int potentiometerValue()
+    byte potentiometerValue()
     {
-      int result = analogRead(this->pin.analogInput);
+      byte result;
+      int rawValue;
+      int constrainedValue;
+      long mappedValue;
+      rawValue = analogRead(this->pin.analogInput);
+      mappedValue = map(rawValue, 0, 1023, 0, 255);
+      constrainedValue = constrain(mappedValue, 0, 255);
+      result = (byte)constrainedValue;
       return result;
     }
 };
@@ -448,7 +463,7 @@ ArduinoProtoThread *tailServoThread;
 void setup()
 {
   // Initialize serial monitor support
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(1500);
 
   // Initialize Arduino Cloud
