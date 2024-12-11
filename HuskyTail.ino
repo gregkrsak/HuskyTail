@@ -386,8 +386,8 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       unsigned long msSinceStart = millis();
       static byte previousServoPosition;
       ///// Hardware safety logic ///////
-      if (msSinceStart > 40000 && msSinceStart < 45000) { Serial.println("LinearServo: PREPARE FOR MOVEMENT"); } // See issue #19 - Arduino Cloud initialization makes timing unstable at sketch start
-      if (msSinceStart < 45000) { this->resetRetries(); return; } // See issue #19 - Arduino Cloud initialization makes timing unstable at sketch start
+      if (msSinceStart > 40000 && msSinceStart < 45000) { Serial.println("LinearServo: [WARNING] Prepare for movement"); } // See issue #19
+      if (msSinceStart < 45000) { this->resetRetries(); return; } // See issue #19
       if (servoPosition > 244)
       {
         Serial.println("LinearServo: [ERROR] Shutdown due to position high limit exceeded");
