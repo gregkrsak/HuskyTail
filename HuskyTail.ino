@@ -645,14 +645,17 @@ void loop()
   {
     tailServoThread->changeStateTo(Kill);
   }
-  
-  if ((currentSeconds < 30) && (currentSeconds % 2 == 0))
+
+  if (cloud_huskyTailShouldWag)
   {
-    tailServo->moveToPosition(150);
-  }
-  if ((currentSeconds < 30) && (currentSeconds % 3 == 0))
-  {
-    tailServo->moveToPosition(120);
+    if ((currentSeconds < 45) && (currentSeconds % 2 == 0))
+    {
+      tailServo->moveToPosition(150);
+    }
+    if ((currentSeconds < 45) && (currentSeconds % 3 == 0))
+    {
+      tailServo->moveToPosition(120);
+    }
   }
   
   ArduinoCloud.update();
@@ -664,7 +667,7 @@ void loop()
 void onCloudHuskyTailShouldWagChange()
 {
   Serial.print("Alexa: [INFO] Arduino Cloud Variable cloud_huskyTailShouldWag changed to ");
-  Serial.println(cloud_huskyTailShouldWag);
+  Serial.println(cloud_huskyTailShouldWag ? "TRUE" : "FALSE");
 }
 
 /**********************************************************************************************************************/
