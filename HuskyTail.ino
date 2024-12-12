@@ -341,6 +341,8 @@ void ArduinoProtoThread::timeSlice()
 //
 
 
+// Required for real-time clock functions
+#include "RTC.h"
 // Required for Arduino Cloud Things
 #include "thingProperties.h"
 
@@ -376,7 +378,7 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       pinMode(this->pin.hbridgeOutput1, OUTPUT);
       pinMode(this->pin.hbridgeOutput2, OUTPUT);
       this->initialPotentiometerValue = this->potentiometerValue();
-      Serial.print("LinearServo: Initialized at position ");
+      Serial.print("LinearServo: [INFO] Initialized at position ");
       Serial.println(this->startPosition());
     }
 
@@ -386,25 +388,46 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       unsigned long msSinceStart = millis();
       static byte previousServoPosition;
       ///// Hardware safety logic ///////
-      if (msSinceStart > 40000 && msSinceStart < 45000) { Serial.println("LinearServo: [WARNING] Prepare for movement"); } // See issue #19
-      if (msSinceStart < 45000) { this->resetRetries(); return; } // See issue #19
+      if (this->isInErrorState())
+      {
+        return;
+      }
+      if (msSinceStart > 37000 && msSinceStart < 40000) { Serial.println("LinearServo: [WARNING] Prepare for movement"); } // See issue #19
+      if (msSinceStart < 40000) { this->resetRetries(); this->resetDutyCycle(); return; } // See issue #19
       if (servoPosition > 244)
       {
         Serial.println("LinearServo: [ERROR] Shutdown due to position high limit exceeded");
-        this->actuatorHold();
+        this->actuatorDisable();
         return;
       }
       if (servoPosition < 2)
       {
         Serial.println("LinearServo: [ERROR] Shutdown due to position low limit exceeded");
-        this->actuatorHold();
+        this->actuatorDisable();
         return;
       }
-      if (this->movementRetries > 1)
+      if (this->movementRetries > 2)
       {
         Serial.println("LinearServo: [ERROR] Shutdown due to actuator not responding");
-        this->actuatorHold();
+        this->actuatorDisable();
         return;
+      }
+      if (this->timesDutyCycleExceeded > 4)
+      {
+        Serial.println("LinearServo: [ERROR] Shutdown due to a trend of exceeding actuator duty cycle");
+        this->actuatorDisable();
+        return;
+      }
+      else
+      {
+        if (this->dutyCycle > 20)
+        {
+          if (this->timesDutyCycleExceeded < 255) this->timesDutyCycleExceeded++;
+          Serial.print("LinearServo: [WARNING] Actuator duty cycle has been exceeded ");
+          Serial.print(this->timesDutyCycleExceeded);
+          Serial.println(" times");
+          this->resetDutyCycle();
+        }
       }
       if (this->commandedPosition > 240)
       {
@@ -417,24 +440,17 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       ///// Servo positioning logic /////
       if (servoPosition < this->commandedPosition - this->slop)
       {
-        if (servoPosition == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
-        Serial.println("LinearServo: Extending...");
         this->actuatorExtend();
+        if (this->potentiometerValue() == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
       }
       else if (servoPosition > this->commandedPosition + this->slop)
       {
-        if (servoPosition == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
-        Serial.println("LinearServo: Retracting...");
         this->actuatorRetract();
+        if (this->potentiometerValue() == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
       }
       else
       {
         this->resetRetries();
-        Serial.print("LinearServo: Holding at ");
-        Serial.print(servoPosition);
-        Serial.print(" (Commanded ");
-        Serial.print(this->commandedPosition);
-        Serial.println(")");
         this->actuatorHold();
       }
       ///////////////////////////////////
@@ -443,6 +459,8 @@ class LinearServo : public ArduinoProtoThreadEventHandler
 
     void onKill()
     {
+      this->alive = false;
+      Serial.println("LinearServo: [INFO] Disabled until board reset");
       return;
     }
 
@@ -454,8 +472,6 @@ class LinearServo : public ArduinoProtoThreadEventHandler
 
     void moveToPosition(int servoPosition)
     {
-      Serial.print("LinearServo: MOVE TO POSITION ");
-      Serial.println(servoPosition);
       this->commandedPosition = servoPosition;
     }
 
@@ -464,41 +480,108 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       this->moveToPosition(123);
     }
 
+    bool isInErrorState()
+    {
+      return this->errorState;
+    }
+
+    bool isAlive()
+    {
+      return this->alive;
+    }
+
   protected:
     LinearServoPins pin;
+    bool alive = true;
+    bool isMoving = false;
+    bool errorState = false;
     byte initialPotentiometerValue;
     byte commandedPosition = 100;
     byte slop;
     byte movementRetries = 0;
+    byte dutyCycle = 0;
+    byte timesDutyCycleExceeded = 0;
 
     void actuatorExtend()
     {
-      digitalWrite(this->pin.hbridgeOutput1, HIGH);
-      digitalWrite(this->pin.hbridgeOutput2, LOW);
+      this->incrementDutyCycle();
+      if (!this->isMoving)
+      {
+        digitalWrite(this->pin.hbridgeOutput1, HIGH);
+        digitalWrite(this->pin.hbridgeOutput2, LOW);
+        this->isMoving = true;
+        Serial.println("LinearServo: [INFO] Extending...");
+      }
     }
 
     void actuatorRetract()
     {
-      digitalWrite(this->pin.hbridgeOutput1, LOW);
-      digitalWrite(this->pin.hbridgeOutput2, HIGH);
+      this->incrementDutyCycle();
+      if (!this->isMoving)
+      {
+        digitalWrite(this->pin.hbridgeOutput1, LOW);
+        digitalWrite(this->pin.hbridgeOutput2, HIGH);
+        this->isMoving = true;
+        Serial.println("LinearServo: [INFO] Retracting...");
+      }
     }
 
     void actuatorHold()
     {
-      digitalWrite(this->pin.hbridgeOutput1, LOW);
-      digitalWrite(this->pin.hbridgeOutput2, LOW);
+      this->decrementDutyCycle();
+      if (this->isMoving)
+      {
+        digitalWrite(this->pin.hbridgeOutput1, LOW);
+        digitalWrite(this->pin.hbridgeOutput2, LOW);
+        this->isMoving = false;
+        Serial.print("LinearServo: [INFO] Holding at ");
+        Serial.print(this->potentiometerValue());
+        Serial.print(" (Commanded ");
+        Serial.print(this->commandedPosition);
+        Serial.println(")");
+      }
+    }
+
+    void actuatorDisable()
+    {
+      this->actuatorHold();
+      this->errorState = true;
     }
 
     void incrementRetries()
     {
       this->movementRetries++;
-      Serial.print("LinearServo: [WARNING] Movement retries now at ");
-      Serial.println(this->movementRetries);
+      if (this->movementRetries > 1)
+      {
+        Serial.print("LinearServo: [WARNING] Movement retries now at ");
+        Serial.println(this->movementRetries);
+      }
     }
 
     void resetRetries()
     {
       this->movementRetries = 0;
+    }
+
+    void incrementDutyCycle()
+    {
+      if (this->dutyCycle < 255)
+      {
+        this->dutyCycle++;
+      }
+    }
+
+    void decrementDutyCycle()
+    {
+      if (this->dutyCycle > 0)
+      {
+        this->dutyCycle--;
+      }
+    }
+
+    void resetDutyCycle()
+    {
+      this->dutyCycle = 0;
     }
 
     byte potentiometerValue()
@@ -519,12 +602,17 @@ class LinearServo : public ArduinoProtoThreadEventHandler
 LinearServo *tailServo;
 ArduinoProtoThread *tailServoThread;
 
+RTCTime currentTime;
+
 
 void setup()
 {
+  // Initialize the RTC
+  RTC.begin();
+  
   // Initialize serial monitor support
   Serial.begin(115200);
-  delay(1500);
+  delay(1000);
 
   // Initialize Arduino Cloud
   initProperties();
@@ -543,13 +631,30 @@ void setup()
   tailServoThread->setEventHandlerTo(tailServo);
   tailServoThread->setExecutionIntervalTo(100);  
   tailServoThread->changeStateTo(Start);
-
-  tailServo->moveToCenter();
 }
 
 
 void loop()
 {
+  byte currentSeconds;
+  
+  RTC.getTime(currentTime);
+  currentSeconds = currentTime.getSeconds();
+
+  if (tailServo->isAlive() && tailServo->isInErrorState())
+  {
+    tailServoThread->changeStateTo(Kill);
+  }
+  
+  if ((currentSeconds < 30) && (currentSeconds % 2 == 0))
+  {
+    tailServo->moveToPosition(150);
+  }
+  if ((currentSeconds < 30) && (currentSeconds % 3 == 0))
+  {
+    tailServo->moveToPosition(120);
+  }
+  
   ArduinoCloud.update();
   tailServoThread->timeSlice();
 }
@@ -558,7 +663,7 @@ void loop()
 // This code is executed every time a new value is received from Arduino Cloud.
 void onCloudHuskyTailShouldWagChange()
 {
-  Serial.print("Alexa: Arduino Cloud Variable cloud_huskyTailShouldWag changed to ");
+  Serial.print("Alexa: [INFO] Arduino Cloud Variable cloud_huskyTailShouldWag changed to ");
   Serial.println(cloud_huskyTailShouldWag);
 }
 
