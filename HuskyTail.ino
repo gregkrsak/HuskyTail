@@ -351,6 +351,10 @@ void ArduinoProtoThread::timeSlice()
 /* CloudSwitch cloud_huskyTailShouldWag; */
 
 
+#define TAIL_HIGH_POSITION 137
+#define TAIL_LOW_POSITION 56
+
+
 // Pins used to control the linear servo
 struct LinearServoPins
 {
@@ -377,14 +381,14 @@ class LinearServo : public ArduinoProtoThreadEventHandler
     {
       pinMode(this->pin.hbridgeOutput1, OUTPUT);
       pinMode(this->pin.hbridgeOutput2, OUTPUT);
-      this->initialPotentiometerValue = this->potentiometerValue();
+      this->initialPotentiometerValue = this->currentActuatorPosition();
       Serial.print("LinearServo: [INFO] Initialized at position ");
       Serial.println(this->startPosition());
     }
 
     void onRunning()
     {
-      byte servoPosition = this->potentiometerValue();
+      byte servoPosition = this->currentActuatorPosition();
       unsigned long msSinceStart = millis();
       static byte previousServoPosition;
       ///// Hardware safety logic ///////
@@ -420,7 +424,7 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       }
       else
       {
-        if (this->dutyCycle > 20)
+        if (this->dutyCycle > 50)
         {
           if (this->timesDutyCycleExceeded < 255) this->timesDutyCycleExceeded++;
           Serial.print("LinearServo: [WARNING] Actuator duty cycle has been exceeded ");
@@ -441,12 +445,12 @@ class LinearServo : public ArduinoProtoThreadEventHandler
       if (servoPosition < this->commandedPosition - this->slop)
       {
         this->actuatorExtend();
-        if (this->potentiometerValue() == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
+        if (this->currentActuatorPosition() == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
       }
       else if (servoPosition > this->commandedPosition + this->slop)
       {
         this->actuatorRetract();
-        if (this->potentiometerValue() == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
+        if (this->currentActuatorPosition() == previousServoPosition) { this->incrementRetries(); } else { this->resetRetries(); }
       }
       else
       {
@@ -472,7 +476,24 @@ class LinearServo : public ArduinoProtoThreadEventHandler
 
     void moveToPosition(int servoPosition)
     {
-      this->commandedPosition = servoPosition;
+      if (this->commandedPosition != servoPosition)
+      {
+        this->isMoving = false;
+        this->commandedPosition = servoPosition;
+      }
+    }
+
+    byte currentActuatorPosition()
+    {
+      byte result;
+      int rawValue;
+      int constrainedValue;
+      long mappedValue;
+      rawValue = analogRead(this->pin.analogInput);
+      mappedValue = map(rawValue, 0, 1023, 0, 255);
+      constrainedValue = constrain(mappedValue, 0, 255);
+      result = (byte)constrainedValue;
+      return result;
     }
 
     void moveToCenter()
@@ -535,7 +556,7 @@ class LinearServo : public ArduinoProtoThreadEventHandler
         digitalWrite(this->pin.hbridgeOutput2, LOW);
         this->isMoving = false;
         Serial.print("LinearServo: [INFO] Holding at ");
-        Serial.print(this->potentiometerValue());
+        Serial.print(this->currentActuatorPosition());
         Serial.print(" (Commanded ");
         Serial.print(this->commandedPosition);
         Serial.println(")");
@@ -583,19 +604,6 @@ class LinearServo : public ArduinoProtoThreadEventHandler
     {
       this->dutyCycle = 0;
     }
-
-    byte potentiometerValue()
-    {
-      byte result;
-      int rawValue;
-      int constrainedValue;
-      long mappedValue;
-      rawValue = analogRead(this->pin.analogInput);
-      mappedValue = map(rawValue, 0, 1023, 0, 255);
-      constrainedValue = constrain(mappedValue, 0, 255);
-      result = (byte)constrainedValue;
-      return result;
-    }
 };
 
 
@@ -629,39 +637,62 @@ void setup()
   tailServo = new LinearServo(withPinConnections, andSlop);
   tailServoThread = new ArduinoProtoThread();
   tailServoThread->setEventHandlerTo(tailServo);
-  tailServoThread->setExecutionIntervalTo(100);  
+  tailServoThread->setExecutionIntervalTo(750);  
   tailServoThread->changeStateTo(Start);
 }
 
 
 void loop()
 {
-  byte currentSeconds;
-  
+  byte currentSeconds;    // Holds the seconds portion of the current time
+  byte waggingUp = false; // Direction of tail wag
+
+  // Get data from the board's real-time clock
   RTC.getTime(currentTime);
   currentSeconds = currentTime.getSeconds();
-
+  
+  // Check for a servo error state
   if (tailServo->isAlive() && tailServo->isInErrorState())
   {
     tailServoThread->changeStateTo(Kill);
   }
-
+  
+  // Wag the tail
   if (cloud_huskyTailShouldWag)
   {
-    if ((currentSeconds < 45) && (currentSeconds % 2 == 0))
+    if (tailServoIsApproximatelyAt(TAIL_HIGH_POSITION) && waggingUp)
     {
-      tailServo->moveToPosition(150);
+      waggingUp = false;
     }
-    if ((currentSeconds < 45) && (currentSeconds % 3 == 0))
+    if (tailServoIsApproximatelyAt(TAIL_LOW_POSITION) && !waggingUp)
     {
-      tailServo->moveToPosition(120);
+      waggingUp = true;
+    }
+    if (waggingUp)
+    {
+      tailServo->moveToPosition(TAIL_HIGH_POSITION);
+    }
+    else
+    {
+      tailServo->moveToPosition(TAIL_LOW_POSITION);
     }
   }
   
+  // Process Arduino Cloud updates
   ArduinoCloud.update();
+  // Process servo updates
   tailServoThread->timeSlice();
 }
 
+// This function is based on code by forum user robtillaart
+// Ref: https://forum.arduino.cc/t/how-do-i-do-an-approximately-equals/391466/3
+bool tailServoIsApproximatelyAt(byte targetPosition)
+{
+  byte x = tailServo->currentActuatorPosition();
+  byte y = targetPosition;
+  byte epsilon = 5;
+  if ((abs(x - y) < epsilon) || (abs(y - x) < epsilon)) { return true; } else { return false; }
+}
 
 // This code is executed every time a new value is received from Arduino Cloud.
 void onCloudHuskyTailShouldWagChange()
